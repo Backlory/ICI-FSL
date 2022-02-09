@@ -3,14 +3,14 @@ import argparse
 
 def config():
     parser = argparse.ArgumentParser('ICI-FSL')
-    parser.add_argument('--folder', type=str, default='data',
+    parser.add_argument('--folder', type=str, default='/media/newdisk/home2/liyaning2/Desktop/dataset-fsl/',
                         help='Path to the folder the data is downloaded to.')
-    parser.add_argument('--ckpt', type=str, default=None,
+    parser.add_argument('--ckpt', type=str, default="/ckpt/my/",
                         help='Path to the trained model.')
-    parser.add_argument('--resume', type=str, default=None)
+    parser.add_argument('--resume', type=str, default="ckpt/res12_mini.pth.tar")
     parser.add_argument('--classifier', type=str, default='lr',
                         help='lr/svm.')
-    parser.add_argument('--gpu', '-g', type=str, default='0')
+    parser.add_argument('--gpu', '-g', type=str, default='1')
     parser.add_argument('--mode', type=str, default='test',
                         help='train/test')
     parser.add_argument('--dataset', type=str, default='miniimagenet')
