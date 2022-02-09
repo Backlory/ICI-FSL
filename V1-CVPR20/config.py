@@ -14,7 +14,7 @@ def config():
     parser.add_argument('--mode', type=str, default='test',
                         help='train/test')
     parser.add_argument('--dataset', type=str, default='miniimagenet')
-    parser.add_argument('--num_shots', type=int, default=1,
+    parser.add_argument('--num_shots', type=int, default=2,
                         help='Number of examples per class (k in "k-shot", default: 5).')
     parser.add_argument('--num_test_ways', type=int, default=5,
                         help='Number of classes per task (N in "N-way", default: 5).')
@@ -32,7 +32,7 @@ def config():
                         help='Reduced dimension.')
     parser.add_argument('--embed', type=str, default='pca',
                         help='Dimensionality reduction algorithm.')
-    parser.add_argument('--unlabel', type=int, default=0,
+    parser.add_argument('--unlabel', type=int, default=80,      #0, 15, 30, 80
                         help='Number of unlabeled examples per class, 0 means TFSL setting.')
     parser.add_argument('--img_size', type=int, default=84)
     args = parser.parse_args()

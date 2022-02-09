@@ -7,10 +7,9 @@ import collections
 import numpy as np
 import PIL.Image as Image
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from torchvision import transforms
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
-
 
 class DataSet(Dataset):
 
@@ -27,7 +26,7 @@ class DataSet(Dataset):
 
         for l in lines:
             name, wnid = l.split(',')
-            path = osp.join(data_root, 'images', name)
+            path = osp.join(data_root, 'data', wnid , name)  #channged, 220209.
             if wnid not in self.wnids:
                 self.wnids.append(wnid)
                 lb += 1
@@ -55,48 +54,53 @@ class DataSet(Dataset):
 
     def __getitem__(self, i):
         if i == -1:
-            return torch.zeros([3, self.img_size, self.img_size]), 0
+            return torch.zeros([3, self.img_size, self.img_size]), 0    #占位图片
         path, label = self.data[i], self.label[i]
         image = self.transform(Image.open(path).convert('RGB'))
         return image, 1
 
-
 class CategoriesSampler():
 
-    def __init__(self, label, n_batch, n_cls, n_per):
-        self.n_batch = n_batch #num_batches
-        self.n_cls = n_cls # test_ways
-        self.n_per = np.sum(n_per) # num_per_class
+    def __init__(self, label, n_batch, n_cls, n_per):   
+        '''
+        标签列表，测试batch数，way，n_per = (shot, test, unlabel)
+        n_per代表每类抽取的总张数。对每类而言, 有shot张作为本类的support set用, 有
+        test张作为本类的query set用, 有unlabel张作为本类的半监督增强集用。
+        '''
+        self.n_batch = n_batch          # num_batches
+        self.n_cls = n_cls              # test_ways
+        self.n_per = np.sum(n_per)      # num_per_class, 对每类的抽样数=shot+15+无标签数
         self.number_distract = n_per[-1]
 
         label = np.array(label)
         self.m_ind = []
         for i in range(max(label) + 1):
-            ind = np.argwhere(label == i).reshape(-1)
+            ind = np.argwhere(label == i).reshape(-1)   #按类别存储label的index。20个tensor每类一个，每个tensor中600个index，
             ind = torch.from_numpy(ind)
             self.m_ind.append(ind)
 
     def __len__(self):
         return self.n_batch
     
+
     def __iter__(self):
         for i_batch in range(self.n_batch):
             batch = []
             indicator_batch = []
-            classes = torch.randperm(len(self.m_ind))
+            classes = torch.randperm(len(self.m_ind))   #随机排列
             trad_classes = classes[:self.n_cls]
-            for c in trad_classes:
-                l = self.m_ind[c]
-                pos = torch.randperm(len(l))[:self.n_per]
-                cls_batch = l[pos]
+            for c in trad_classes:  #对trad_classes中的某一类，随机抽shot个
+                l = self.m_ind[c]   
+                pos = torch.randperm(len(l))[:self.n_per]   #pos长度=nper
+                cls_batch = l[pos]                          #cls_batch长度=pos
                 cls_indicator = np.zeros(self.n_per)
                 cls_indicator[:cls_batch.shape[0]] = 1
-                if cls_batch.shape[0] != self.n_per:
+                if cls_batch.shape[0] != self.n_per:    #如果没对齐，人工对齐
                     cls_batch = torch.cat([cls_batch, -1*torch.ones([self.n_per-cls_batch.shape[0]]).long()], 0)
                 batch.append(cls_batch)
                 indicator_batch.append(cls_indicator)
             batch = torch.stack(batch).t().reshape(-1)
-            yield batch
+            yield batch #batch=5类，每类num_per_class个. num_per_class=shot+15+无标签数
 
 
 filenameToPILImage = lambda x: Image.open(x).convert('RGB')

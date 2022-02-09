@@ -102,42 +102,43 @@ def test(args):
                                 args.num_test_ways, (args.num_shots, 15, args.unlabel))
     testloader = DataLoader(dataset, batch_sampler=sampler,
                             shuffle=False, num_workers=0, pin_memory=True)
-    k = args.num_shots * args.num_test_ways
+    k = args.num_shots * args.num_test_ways     #每个episode的support set图片数, k=shot*ways
     loader = tqdm(testloader, ncols=0)
     iterations = math.ceil(args.unlabel/args.step) + \
-        2 if args.unlabel != 0 else math.ceil(15/args.step) + 2
-    acc_list = [[] for _ in range(iterations)]
+        2 if args.unlabel != 0 else math.ceil(15/args.step) + 2 #计算轮次数
+    acc_list = [[] for _ in range(iterations)]  #准确率列表，长度=iterations
+    num_img_per_class = args.num_shots+15+args.unlabel
     for data, indicator in loader:
-        targets = torch.arange(args.num_test_ways).repeat(args.num_shots+15+args.unlabel).long()[
-            indicator[:args.num_test_ways*(args.num_shots+15+args.unlabel)] != 0]
-        data = data[indicator != 0].to(args.device)
-        train_inputs = data[:k]
+        targets = torch.arange(args.num_test_ways).repeat(num_img_per_class).long()[
+            indicator[:args.num_test_ways*(num_img_per_class)] != 0]
+        data = data[indicator != 0].to(args.device) #0代表假数据，剔除即可
+        #
+        train_inputs = data[:k]                         #support set, [shot, 3, h, w]
         train_targets = targets[:k].cpu().numpy()
-        test_inputs = data[k:k+15*args.num_test_ways]
+        test_inputs = data[k:k+15*args.num_test_ways]   #query set, [way*15, 3, h, w]
         test_targets = targets[k:k+15*args.num_test_ways].cpu().numpy()
-        train_embeddings = get_embedding(model, train_inputs, args.device)
-        ici.fit(train_embeddings, train_targets)
+        train_embeddings = get_embedding(model, train_inputs, args.device)#图片->高维特征向量
         test_embeddings = get_embedding(model, test_inputs, args.device)
         if args.unlabel != 0:
             unlabel_inputs = data[k+15*args.num_test_ways:]
-            unlabel_embeddings = get_embedding(
-                model, unlabel_inputs, args.device)
+            unlabel_embeddings = get_embedding(model, unlabel_inputs, args.device)
         else:
             unlabel_embeddings = None
-        acc = ici.predict(test_embeddings, unlabel_embeddings,
-                          True, test_targets)
+        #
+        ici.fit(train_embeddings, train_targets)    #将support set的数据喂给ici
+        acc = ici.predict(test_embeddings, unlabel_embeddings,True, test_targets)   #用query set预测，返回该task的acc
+        #
         for i in range(min(iterations-1,len(acc))):
             acc_list[i].append(acc[i])
-        acc_list[-1].append(acc[-1])
+        acc_list[-1].append(acc[-1])    #一定要把acc的最后一个，也存放在acc列表的最后一个
     mean_list = []
     ci_list = []
-    for item in acc_list:
+    for item in acc_list:   #acc_list = [5, 600]
         mean, ci = mean_confidence_interval(item)
         mean_list.append(mean)
         ci_list.append(ci)
-    print("Test Acc Mean{}".format(
-        ' '.join([str(i*100)[:5] for i in mean_list])))
-    print("Test Acc ci{}".format(' '.join([str(i*100)[:5] for i in ci_list])))
+    print("Test Acc Mean = {}%".format('%, '.join([str(i*100)[:5] for i in mean_list])))
+    print("Test Acc ci = {}".format(', '.join([str(i*100)[:5] for i in ci_list])))
 
 
 def main(args):

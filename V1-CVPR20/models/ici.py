@@ -24,21 +24,21 @@ class ICI(object):
         self.support_X = self.norm(X)
         self.support_y = y
 
-    def predict(self, X, unlabel_X=None, show_detail=False, query_y=None):
+    def predict(self, X, unlabel_X=None, show_detail=False, query_y=None):  #query_y=标签
         support_X, support_y = self.support_X, self.support_y
         way, num_support = self.num_class, len(support_X)
         query_X = self.norm(X)
-        if unlabel_X is None:
+        if unlabel_X is None:   #如果没有无标签数据，就先拿query_X占个位
             unlabel_X = query_X
         else:
             unlabel_X = self.norm(unlabel_X)
         num_unlabel = unlabel_X.shape[0]
         assert self.support_X is not None
-        embeddings = np.concatenate([support_X, unlabel_X])
+        embeddings = np.concatenate([support_X, unlabel_X]) #对task的支持集和无标签集降维
         X = self.embed(embeddings)
-        H = np.dot(np.dot(X, np.linalg.inv(np.dot(X.T, X))), X.T)
-        X_hat = np.eye(H.shape[0]) - H
-        if self.max_iter == 'auto':
+        H = np.dot(np.dot(X, np.linalg.inv(np.dot(X.T, X))), X.T)   #Eq(4), 令w偏导=0解出w后反代回，得系数 X * (X'X)^(-1) * X'
+        X_hat = np.eye(H.shape[0]) - H                              #redefine x_hat = (I-H)
+        if self.max_iter == 'auto':     #ICI分类器需要迭代。这里是在计算最大迭代次数
             # set a big number
             self.max_iter = num_support + num_unlabel
         elif self.max_iter == 'fix':
@@ -52,13 +52,13 @@ class ICI(object):
         for _ in range(self.max_iter):
             if show_detail:
                 predicts = self.classifier.predict(query_X)
-                acc_list.append(np.mean(predicts == query_y))
+                acc_list.append(np.mean(predicts == query_y))   #计算当前时刻，对查询集的acc
             pseudo_y = self.classifier.predict(unlabel_X)
-            y = np.concatenate([support_y, pseudo_y])
-            Y = self.label2onehot(y, way)
-            y_hat = np.dot(X_hat, Y)
+            y = np.concatenate([support_y, pseudo_y])           #揉在一起准备洗牌了
+            Y = self.label2onehot(y, way)                       #独热编码，[(支持集+无监督集), way数]
+            y_hat = np.dot(X_hat, Y)                            #Eq(4) redefine Y_hat = X_hat*Y
             support_set = self.expand(support_set, X_hat, y_hat, way, num_support, pseudo_y,
-                                      embeddings, y)
+                                      embeddings, y)            #关键代码：洗牌！
             y = np.argmax(Y, axis=1)
             self.classifier.fit(embeddings[support_set], y[support_set])
             if len(support_set) == len(embeddings):
@@ -71,18 +71,16 @@ class ICI(object):
 
 
     def expand(self, support_set, X_hat, y_hat, way, num_support, pseudo_y, embeddings, targets):
-        _, coefs, _ = self.elasticnet.path(X_hat, y_hat, l1_ratio=1.0)
+        _, coefs, _ = self.elasticnet.path(X_hat, y_hat, l1_ratio=1.0)  # Compute elastic net path with coordinate descent.
         coefs = np.sum(np.abs(coefs.transpose(2, 1, 0)[
-                       ::-1, num_support:, :]), axis=2)
+                       ::-1, num_support:, :]), axis=2) #把五个值加起来了
         selected = np.zeros(way)
-        for gamma in coefs:
-            for i, g in enumerate(gamma):
-                if g == 0.0 and \
-                    (i+num_support not in support_set) and \
-                        (selected[pseudo_y[i]] < self.step):
+        for idx, gamma in enumerate(coefs):
+            for i, g in enumerate(gamma):       #选择gamma为0的送入支持集
+                if (g == 0.0) and (i+num_support not in support_set) and (selected[pseudo_y[i]] < self.step):
                     support_set.append(i+num_support)
                     selected[pseudo_y[i]] += 1
-            if np.sum(selected >= self.step) == way:
+            if np.sum(selected >= self.step) == way:    #五类都获得足够样本时，即提前跳出。本次是91
                 break
         return support_set
 
